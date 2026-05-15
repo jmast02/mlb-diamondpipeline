@@ -243,13 +243,6 @@ make dbt-test        # Run dbt schema tests locally
 | Medallion architecture | Bronze (raw) → Silver (staging) → Gold (marts) |
 | Idempotency | `DROP CASCADE` + `distinct on` + dbt `unique_key` |
 
----
-
-## Resume Bullet
-
-> *"Built an end-to-end MLB data pipeline processing live game events through Kafka, dbt, and PostgreSQL — automating hourly ingestion and ELT transformation via Airflow DAGs, validating data quality with 44 dbt schema tests and source freshness checks, and serving standings, player analytics, and pitcher-batter matchups through a deployed Plotly Dash dashboard. Full stack runs on docker compose up."*
-
----
 
 ## Deep Dive
 
