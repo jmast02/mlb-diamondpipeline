@@ -244,12 +244,6 @@ make dbt-test        # Run dbt schema tests locally
 | Idempotency | `DROP CASCADE` + `distinct on` + dbt `unique_key` |
 
 
-## Deep Dive
-
-For a full explanation of how every tool works, Django-to-DE analogies, code walkthroughs, and interview talking points → **[ARCHITECTURE.md](ARCHITECTURE.md)**
-
----
-
 ## Data Source
 
 Live data from the [MLB Stats API](https://statsapi.mlb.com/api/) — free, public, no authentication required.
