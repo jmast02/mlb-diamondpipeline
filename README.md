@@ -1,6 +1,6 @@
 # ⚾ MLB DiamondPipeline
 
-A production-style, end-to-end data engineering portfolio project that ingests live MLB game data, streams it through Apache Kafka, transforms it with dbt, orchestrates everything with Airflow, and serves it through an interactive Plotly Dash dashboard — all running locally with a single command.
+A production-style, end-to-end data engineering project that ingests live MLB game data, streams it through Apache Kafka, transforms it with dbt, orchestrates everything with Airflow, and serves it through an interactive Plotly Dash dashboard — all running locally with a single command.
 
 ---
 
