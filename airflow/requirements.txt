@@ -1,0 +1,9 @@
+# Let Airflow constraint file manage versions of packages it already pins
+# (requests, pandas, psycopg2-binary, sqlalchemy).
+# Only enforce versions for packages Airflow doesn't pin.
+requests
+pandas
+psycopg2-binary
+confluent-kafka>=2.4.0
+python-dotenv
+dbt-postgres

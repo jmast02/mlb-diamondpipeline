@@ -1,0 +1,61 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: public
+    description: "Raw data loaded from the MLB Stats API via Kafka consumer"
+
+    tables:
+      - name: raw_teams
+        description: "MLB team reference data — 30 teams, refreshed each ingestion run"
+        columns:
+          - name: team_id
+            tests: [not_null, unique]
+          - name: team_name
+            tests: [not_null]
+          - name: league_name
+            tests: [not_null]
+          - name: division_name
+            tests: [not_null]
+
+      - name: raw_standings
+        description: "Current AL/NL division standings snapshot"
+        columns:
+          - name: team_id
+            tests: [not_null, unique]
+          - name: wins
+            tests: [not_null]
+          - name: losses
+            tests: [not_null]
+          - name: win_pct
+            tests: [not_null]
+
+      - name: raw_schedule
+        description: "MLB game schedule — one row per game"
+        columns:
+          - name: game_pk
+            tests: [not_null, unique]
+          - name: home_team_id
+            tests: [not_null]
+          - name: away_team_id
+            tests: [not_null]
+          - name: status
+            tests: [not_null]
+
+      - name: raw_game_events
+        description: "Play-by-play events streamed via Kafka — one row per at-bat"
+        freshness:
+          warn_after: {count: 24, period: hour}
+          error_after: {count: 48, period: hour}
+        loaded_at_field: "end_time::timestamp"
+        columns:
+          - name: game_pk
+            tests: [not_null]
+          - name: at_bat_index
+            tests: [not_null]
+          - name: batter_id
+            tests: [not_null]
+          - name: pitcher_id
+            tests: [not_null]
+          - name: event_type
+            tests: [not_null]

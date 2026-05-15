@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: mart_standings
+    description: "AL/NL standings with division and league rank — ready for dashboard"
+    columns:
+      - name: team_id
+        tests: [not_null, unique]
+      - name: division_rank
+        tests: [not_null]
+      - name: league_rank
+        tests: [not_null]
+
+  - name: mart_game_results
+    description: "Completed game results with winner, loser, and run differential"
+    columns:
+      - name: game_pk
+        tests: [not_null, unique]
+      - name: winning_team
+        tests: [not_null]
+
+  - name: mart_player_stats
+    description: "Season batting stats aggregated from play-by-play — min 3 plate appearances"
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+      - name: batting_avg
+        tests: [not_null]
+
+  - name: mart_pitcher_matchups
+    description: "Pitcher vs. batter head-to-head stats — min 2 plate appearances"

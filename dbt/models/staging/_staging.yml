@@ -1,0 +1,38 @@
+version: 2
+
+models:
+  - name: stg_teams
+    description: "Cleaned team reference data with proper types"
+    columns:
+      - name: team_id
+        tests: [not_null, unique]
+      - name: team_name
+        tests: [not_null]
+
+  - name: stg_standings
+    description: "Typed and cleaned AL/NL standings"
+    columns:
+      - name: team_id
+        tests: [not_null, unique]
+      - name: wins
+        tests: [not_null]
+      - name: losses
+        tests: [not_null]
+      - name: win_pct
+        tests: [not_null]
+
+  - name: stg_schedule
+    description: "Typed game schedule with nullable scores for unplayed games"
+    columns:
+      - name: game_pk
+        tests: [not_null, unique]
+
+  - name: stg_game_events
+    description: "Deduplicated play-by-play events — incremental, keyed on event_id"
+    columns:
+      - name: event_id
+        tests: [not_null, unique]
+      - name: game_pk
+        tests: [not_null]
+      - name: inning
+        tests: [not_null]
