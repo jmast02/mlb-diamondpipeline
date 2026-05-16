@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
 
 import dash
@@ -11,7 +10,7 @@ from dash import Input, Output, callback, dash_table, dcc, html
 
 from dashboard.data import (
     get_game_results,
-    get_pitcher_matchups,
+    get_pitching_leaders,
     get_player_stats,
     get_standings,
 )
@@ -91,9 +90,9 @@ app.layout = dbc.Container([
     # Tabs
     dbc.Tabs(id="tabs", active_tab="standings", children=[
         dbc.Tab(label="🏆  Standings",         tab_id="standings"),
-        dbc.Tab(label="📊  Player Stats",       tab_id="players"),
+        dbc.Tab(label="🏃  Batting",            tab_id="players"),
+        dbc.Tab(label="⚾  Pitching",           tab_id="pitching"),
         dbc.Tab(label="🎮  Game Results",       tab_id="games"),
-        dbc.Tab(label="⚔️   Pitcher vs Batter", tab_id="matchups"),
     ]),
     html.Div(id="tab-content", className="mt-4"),
 
@@ -193,7 +192,7 @@ def _players_tab() -> html.Div:
         orientation="h",
         color_continuous_scale="Blues",
         labels={"ops": "OPS", "player_name": "", "home_runs": "HR"},
-        title="Top 15 Batters by OPS",
+        title="Top 15 Batters by OPS — 2026 Season (Official MLB Stats)",
         text="ops",
         height=420,
     )
@@ -224,9 +223,90 @@ def _players_tab() -> html.Div:
         ], className="g-3 mb-3"),
 
         dcc.Graph(figure=fig, config={"displayModeBar": False}),
-        _section(f"All Batters (≥ 3 PA) — {len(df)} players"),
+        _section(f"All Batters (≥ 10 PA) — {len(df)} players · Official MLB 2026 Season Stats"),
         dash_table.DataTable(
             data=df.to_dict("records"), columns=cols,
+            sort_action="native", filter_action="native",
+            page_size=20, **_TABLE_STYLE,
+        ),
+    ])
+
+
+# ── Pitching tab ─────────────────────────────────────────────────────────────
+
+def _pitching_tab() -> html.Div:
+    df = get_pitching_leaders()
+    if df.empty:
+        return html.P("No pitching stats available.", className="text-muted")
+
+    starters  = df[df["role"] == "Starter"]
+    relievers = df[df["role"] == "Reliever"]
+
+    top_era  = starters.dropna(subset=["era"]).nsmallest(1, "era").iloc[0]  if not starters.empty  else None
+    top_k    = df.nlargest(1, "strikeouts").iloc[0]                          if not df.empty         else None
+    top_wins = starters.nlargest(1, "wins").iloc[0]                          if not starters.empty   else None
+    top_sv   = relievers.nlargest(1, "saves").iloc[0]                        if not relievers.empty  else None
+
+    top15_era = starters.dropna(subset=["era"]).nsmallest(15, "era")
+    fig = px.bar(
+        top15_era.sort_values("era", ascending=False),
+        x="era",
+        y="player_name",
+        color="strikeouts",
+        orientation="h",
+        color_continuous_scale="Reds_r",
+        labels={"era": "ERA", "player_name": "", "strikeouts": "K"},
+        title="Top 15 Starters by ERA — 2026 Season (Official MLB Stats)",
+        text="era",
+        height=420,
+    )
+    fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+
+    starter_cols = [
+        {"name": c, "id": i} for c, i in [
+            ("Pitcher", "player_name"), ("Team", "team_name"),
+            ("W", "wins"), ("L", "losses"), ("G", "games"), ("GS", "games_started"),
+            ("IP", "innings_pitched"), ("K", "strikeouts"), ("BB", "walks_allowed"),
+            ("ERA", "era"), ("WHIP", "whip"), ("K/9", "k_per_9"),
+        ]
+    ]
+    reliever_cols = [
+        {"name": c, "id": i} for c, i in [
+            ("Pitcher", "player_name"), ("Team", "team_name"),
+            ("G", "games"), ("SV", "saves"), ("IP", "innings_pitched"),
+            ("K", "strikeouts"), ("ERA", "era"), ("WHIP", "whip"),
+        ]
+    ]
+
+    return html.Div([
+        dbc.Row([
+            dbc.Col(_card("ERA Leader",  top_era["player_name"]  if top_era  is not None else "-",
+                          f"ERA {top_era['era']:.2f}"            if top_era  is not None else "", "success"), md=3),
+            dbc.Col(_card("K Leader",   top_k["player_name"]    if top_k    is not None else "-",
+                          f"{int(top_k['strikeouts'])} K"        if top_k    is not None else "", "info"),    md=3),
+            dbc.Col(_card("Win Leader", top_wins["player_name"] if top_wins is not None else "-",
+                          f"{int(top_wins['wins'])} W"           if top_wins is not None else "", "warning"), md=3),
+            dbc.Col(_card("Save Leader",top_sv["player_name"]   if top_sv   is not None else "-",
+                          f"{int(top_sv['saves'])} SV"           if top_sv   is not None else "", "danger"),  md=3),
+        ], className="g-3 mb-3"),
+
+        dcc.Graph(figure=fig, config={"displayModeBar": False}),
+
+        _section(f"Starters — {len(starters)} pitchers"),
+        dash_table.DataTable(
+            data=starters.to_dict("records"), columns=starter_cols,
+            sort_action="native", filter_action="native",
+            page_size=20, **_TABLE_STYLE,
+        ),
+
+        _section(f"Relievers — {len(relievers)} pitchers"),
+        dash_table.DataTable(
+            data=relievers.to_dict("records"), columns=reliever_cols,
             sort_action="native", filter_action="native",
             page_size=20, **_TABLE_STYLE,
         ),
@@ -304,93 +384,6 @@ def _games_tab() -> html.Div:
     ])
 
 
-# ── Pitcher vs Batter tab ─────────────────────────────────────────────────────
-
-def _matchups_tab() -> html.Div:
-    df = get_pitcher_matchups()
-    pitchers = sorted(df["pitcher_name"].dropna().unique().tolist())
-    default  = pitchers[0] if pitchers else None
-
-    return html.Div([
-        dbc.Row(dbc.Col([
-            html.Label("Select Pitcher", className="fw-bold small mb-1"),
-            dcc.Dropdown(
-                id="pitcher-select",
-                options=[{"label": p, "value": p} for p in pitchers],
-                value=default,
-                clearable=False,
-                className="mb-3",
-            ),
-        ], md=4)),
-        dbc.Row([
-            dbc.Col(dcc.Graph(id="matchup-chart",
-                              config={"displayModeBar": False}), md=8),
-            dbc.Col(html.Div(id="matchup-cards"), md=4),
-        ]),
-        _section("Matchup Detail"),
-        html.Div(id="matchup-table"),
-    ])
-
-
-@callback(
-    Output("matchup-chart", "figure"),
-    Output("matchup-cards", "children"),
-    Output("matchup-table", "children"),
-    Input("pitcher-select", "value"),
-)
-def _update_matchups(pitcher: str | None):
-    empty_fig = go.Figure().update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-    )
-    if not pitcher:
-        return empty_fig, html.Div(), html.Div()
-
-    df   = get_pitcher_matchups()
-    data = df[df["pitcher_name"] == pitcher].sort_values("batting_avg_vs", ascending=False)
-
-    fig = px.bar(
-        data.head(20),
-        x="batter_name",
-        y="batting_avg_vs",
-        color="home_runs",
-        color_continuous_scale="RdYlGn_r",
-        labels={"batting_avg_vs": "AVG vs", "batter_name": "", "home_runs": "HR"},
-        title=f"Batting Avg vs {pitcher}",
-        text="batting_avg_vs",
-        height=380,
-    )
-    fig.update_traces(texttemplate="%{text:.3f}", textposition="outside")
-    fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis_tickangle=-40,
-    )
-
-    cards = dbc.Stack([
-        _card("Batters Faced",   str(len(data)),                          "unique matchups"),
-        _card("Opp Batting Avg", f"{data['batting_avg_vs'].mean():.3f}",  "avg allowed",   "warning"),
-        _card("HR Allowed",      str(int(data["home_runs"].sum())),        "total HR",      "danger"),
-        _card("Strikeouts",      str(int(data["strikeouts"].sum())),       "total K",       "success"),
-    ], gap=2, className="mt-1")
-
-    cols = [
-        {"name": c, "id": i} for c, i in [
-            ("Batter", "batter_name"), ("PA", "plate_appearances"),
-            ("H", "hits"), ("HR", "home_runs"), ("K", "strikeouts"),
-            ("BB", "walks"), ("RBI", "rbi"), ("AVG vs", "batting_avg_vs"),
-        ]
-    ]
-    table = dash_table.DataTable(
-        data=data.to_dict("records"), columns=cols,
-        sort_action="native", page_size=15, **_TABLE_STYLE,
-    )
-
-    return fig, cards, table
-
-
 # ── Tab router ────────────────────────────────────────────────────────────────
 
 @callback(
@@ -402,8 +395,8 @@ def _render_tab(tab: str, _: int) -> html.Div:
     renderers = {
         "standings": _standings_tab,
         "players":   _players_tab,
+        "pitching":  _pitching_tab,
         "games":     _games_tab,
-        "matchups":  _matchups_tab,
     }
     return renderers.get(tab, lambda: html.Div())()
 

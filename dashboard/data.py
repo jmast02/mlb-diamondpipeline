@@ -49,8 +49,8 @@ def get_game_results() -> pd.DataFrame:
     """)
 
 
-def get_pitcher_matchups() -> pd.DataFrame:
+def get_pitching_leaders() -> pd.DataFrame:
     return _query("""
-        SELECT * FROM analytics.mart_pitcher_matchups
-        ORDER BY plate_appearances DESC, batting_avg_vs DESC
+        SELECT * FROM analytics.mart_pitching_leaders
+        ORDER BY role, era ASC NULLS LAST
     """)

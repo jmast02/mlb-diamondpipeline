@@ -1,6 +1,6 @@
 # ⚾ MLB DiamondPipeline
 
-A production-style, end-to-end data engineering project that ingests live MLB game data, streams it through Apache Kafka, transforms it with dbt, orchestrates everything with Airflow, and serves it through an interactive Plotly Dash dashboard — all running locally with a single command.
+A production-style, end-to-end data engineering portfolio project that ingests full-season MLB data, streams it through Apache Kafka, transforms it with dbt, orchestrates everything with Airflow, and serves it through an interactive Plotly Dash dashboard — all running locally with a single command.
 
 ---
 
@@ -21,7 +21,7 @@ A production-style, end-to-end data engineering project that ingests live MLB ga
 ## Architecture
 
 ```
-MLB Stats API  (free · no auth · live data)
+MLB Stats API  (free · no auth · full season data)
       │
       │ HTTP GET (JSON)
       ▼
@@ -38,29 +38,29 @@ MLB Stats API  (free · no auth · live data)
       │                         │
       │ producer.py             │ consumer.py
       ▼                         ▼
-┌──────────────┐       ┌─────────────────────┐
-│ Apache Kafka │       │ Pandas + SQLAlchemy  │
-│              │──────▶│                     │
-│ mlb.teams    │       │ Batch writes to PG  │
-│ mlb.standings│       └──────────┬──────────┘
-│ mlb.schedule │                  │
-│ mlb.game_    │                  ▼
-│   events     │   ┌──────────────────────────────┐
-└──────────────┘   │         PostgreSQL            │
-                   │                              │
-                   │  public.*   (raw / bronze)   │
-                   │  analytics.stg_* (silver)    │
-                   │  analytics.mart_* (gold)     │
-                   └──────────┬───────────────────┘
-                              │
-                    ┌─────────┴──────────┐
-                    │                    │
-                    ▼                    ▼
-           ┌──────────────┐    ┌──────────────────┐
-           │  Plotly Dash │    │ Prometheus +     │
-           │  Dashboard   │    │ Grafana          │
-           │  :8050       │    │ :9090 / :3000    │
-           └──────────────┘    └──────────────────┘
+┌──────────────────┐   ┌─────────────────────┐
+│  Apache Kafka    │   │ Pandas + SQLAlchemy  │
+│                  │──▶│                     │
+│ mlb.teams        │   │ Batch writes to PG  │
+│ mlb.standings    │   └──────────┬──────────┘
+│ mlb.schedule     │              │
+│ mlb.game_events  │              ▼
+│ mlb.hitting_stats│  ┌──────────────────────────────┐
+│ mlb.pitching_    │  │         PostgreSQL            │
+│   stats          │  │                              │
+└──────────────────┘  │  public.*   (raw / bronze)   │
+                      │  analytics.stg_* (silver)    │
+                      │  analytics.mart_* (gold)     │
+                      └──────────┬───────────────────┘
+                                 │
+                       ┌─────────┴──────────┐
+                       │                    │
+                       ▼                    ▼
+              ┌──────────────┐    ┌──────────────────┐
+              │  Plotly Dash │    │ Prometheus +     │
+              │  Dashboard   │    │ Grafana          │
+              │  :8050       │    │ :9090 / :3000    │
+              └──────────────┘    └──────────────────┘
 ```
 
 ---
@@ -95,13 +95,13 @@ That's it. Airflow picks up the DAG automatically and runs the full pipeline. Wi
 
 ## Dashboard Views
 
-**🏆 Standings** — Live AL/NL division standings with win percentage chart and division/league rank.
+**🏆 Standings** — Live AL/NL division standings with win percentage chart and division/league rank for all 30 teams.
 
-**📊 Player Stats** — Batting leaderboard (AVG, OBP, SLG, OPS) aggregated from play-by-play events. Sortable and filterable.
+**🏃 Batting** — Full season batting leaderboard (AVG, OBP, SLG, OPS, HR, RBI) from official MLB stats for 400+ qualified hitters. Sortable and filterable.
 
-**🎮 Game Results** — Completed game log with scores, winners, run differentials, and wins-by-team chart.
+**⚾ Pitching** — Full season pitching leaderboard (ERA, WHIP, K, K/9) from official MLB stats. Starters and relievers separated, with an ERA leaderboard chart.
 
-**⚔️ Pitcher vs Batter** — Head-to-head matchup stats. Select any pitcher to see their performance against every batter faced.
+**🎮 Game Results** — Complete season game log with 650+ results, scores, winners, run differentials, and a wins-by-team chart for the full season.
 
 ---
 
@@ -109,27 +109,37 @@ That's it. Airflow picks up the DAG automatically and runs the full pipeline. Wi
 
 ### 1 — Ingest & Stream (Kafka)
 
-`ingestion/producer.py` fetches live data from the [MLB Stats API](https://statsapi.mlb.com/api/) and publishes each record as a JSON message to Kafka topics (`mlb.teams`, `mlb.standings`, `mlb.schedule`, `mlb.game_events`).
+`ingestion/producer.py` fetches data from the [MLB Stats API](https://statsapi.mlb.com/api/) and publishes each record as a JSON message across 6 Kafka topics:
 
-`ingestion/consumer.py` subscribes to all topics, batches messages in groups of 50, and writes them to PostgreSQL raw tables using Pandas `DataFrame.to_sql()`.
+| Topic | Content | API Endpoint |
+|---|---|---|
+| `mlb.teams` | 30 team records | `/api/v1/teams` |
+| `mlb.standings` | Current AL/NL standings | `/api/v1/standings` |
+| `mlb.schedule` | Full season schedule (650+ games) | `/api/v1/schedule` with date range |
+| `mlb.game_events` | Play-by-play for recent games | `/api/v1.1/game/{pk}/feed/live` |
+| `mlb.hitting_stats` | Official season stats for 500+ hitters | `/api/v1/stats?group=hitting` |
+| `mlb.pitching_stats` | Official season stats for 600+ pitchers | `/api/v1/stats?group=pitching` |
+
+`ingestion/consumer.py` subscribes to all topics, batches messages, and writes them to PostgreSQL raw tables.
 
 ### 2 — Transform (dbt · ELT pattern)
 
-Raw data lands in the `public` schema untouched. dbt then runs two layers of SQL transformations:
+Raw data lands in the `public` schema untouched. dbt runs two layers of SQL transformations:
 
 | Layer | Schema | Models | Purpose |
 |---|---|---|---|
 | **Staging (Silver)** | `analytics` | `stg_*` | Type casting, renaming, deduplication |
 | **Marts (Gold)** | `analytics` | `mart_*` | Business aggregations, window functions |
 
-`stg_game_events` uses an **incremental model** — only new plays are processed on each run, not the entire table.
+`stg_game_events` uses an **incremental model** — only new plays are processed on each run.
+`stg_hitting_stats` and `stg_pitching_stats` deduplicate by `player_id` to handle mid-season trades.
 
 ### 3 — Validate (dbt tests + volume checks)
 
-- **44 schema tests** (not_null, unique) on every key column across sources, staging, and marts
+- **Schema tests** (not_null, unique) on every key column across sources, staging, and marts
 - **Source freshness** check on `raw_game_events.end_time` — alerts if data is older than 24 hours
 - **Volume check** Airflow task — asserts minimum row counts on all critical tables
-- **Elementary** data observability package installed in dbt for anomaly detection
+- **Elementary** data observability package integrated with dbt
 
 ### 4 — Orchestrate (Airflow)
 
@@ -137,7 +147,7 @@ The `mlb_pipeline` DAG runs hourly with:
 - Automatic retry on failure (1 retry, 3-minute delay)
 - Failure callback for alerting
 - Parallel execution of final validation tasks
-- Full visibility in the Airflow UI
+- Full visibility in the Airflow UI at http://localhost:8090
 
 ### 5 — Observe (Prometheus + Grafana)
 
@@ -154,25 +164,25 @@ Pre-built Grafana dashboard auto-provisions on startup.
 ```
 mlb-diamondpipeline/
 ├── ingestion/
-│   ├── mlb_api.py        # MLB Stats API client
+│   ├── mlb_api.py        # MLB Stats API client (6 endpoints)
 │   ├── db.py             # SQLAlchemy engine + load_dataframe()
-│   ├── producer.py       # Kafka producer
-│   └── consumer.py       # Kafka consumer
+│   ├── producer.py       # Kafka producer (6 topics)
+│   └── consumer.py       # Kafka consumer → PostgreSQL
 ├── dbt/
 │   ├── models/
-│   │   ├── staging/      # Silver layer: typed, cleaned views
-│   │   └── marts/        # Gold layer: business aggregations
+│   │   ├── staging/      # Silver layer: 6 typed, cleaned models
+│   │   └── marts/        # Gold layer: 4 business aggregations
 │   ├── profiles.yml      # DB connection (env-var driven)
 │   └── packages.yml      # Elementary + dbt_utils
 ├── airflow/
 │   ├── Dockerfile        # Extends apache/airflow:2.10.2
 │   ├── requirements.txt  # Pipeline deps for Airflow's Python env
 │   └── dags/
-│       └── mlb_pipeline.py  # Main DAG definition
+│       └── mlb_pipeline.py  # Main DAG definition (8 tasks)
 ├── dashboard/
 │   ├── Dockerfile        # python:3.11-slim + requirements.txt
 │   ├── data.py           # PostgreSQL query functions
-│   └── app.py            # Plotly Dash app (4 tabs, 8 charts)
+│   └── app.py            # Plotly Dash app (4 tabs)
 ├── observability/
 │   ├── prometheus/       # Scrape config
 │   └── grafana/          # Dashboard JSON + provisioning
@@ -189,25 +199,37 @@ mlb-diamondpipeline/
 ## Data Model
 
 ```
-raw_game_events (819 plays/day from ~11 games)
+MLB Stats API (/api/v1/stats · official season stats)
        │
-       ▼ dbt incremental (unique_key: game_pk + at_bat_index)
-stg_game_events
+       ├── raw_hitting_stats (518 players)
+       │         │
+       │         ▼ dbt deduplicate by player_id
+       │   stg_hitting_stats
+       │         │
+       │         ▼ dbt filter ≥10 PA
+       │   mart_player_stats    → AVG, OBP, SLG, OPS, HR, RBI (400+ hitters)
        │
-       ▼ dbt aggregation
-mart_player_stats          → batting_avg, OBP, SLG, OPS per player
-mart_pitcher_matchups      → head-to-head stats per pitcher/batter pair
+       └── raw_pitching_stats (603 pitchers)
+                 │
+                 ▼ dbt deduplicate by player_id
+           stg_pitching_stats
+                 │
+                 ▼ dbt classify starter/reliever
+           mart_pitching_leaders → ERA, WHIP, K/9, saves (starters + relievers)
+
+MLB Stats API (/api/v1/schedule · full season)
+       │
+       ▼ append across days, deduplicate by game_pk in dbt
+raw_schedule (650+ games)
+       │
+       ▼ dbt CASE for winner/loser/run_differential
+mart_game_results → 650+ completed game results for the full season
 
 raw_standings (30 teams)
        │
        ▼ dbt view → stg_standings
-       ▼ dbt window functions
-mart_standings             → wins, losses, win_pct, division_rank, league_rank
-
-raw_schedule + raw_game_events
-       │
-       ▼ dbt join + CASE
-mart_game_results          → winning_team, losing_team, run_differential
+       ▼ dbt window functions (rank() OVER partition)
+mart_standings → division_rank, league_rank for all 30 teams
 ```
 
 ---
@@ -221,7 +243,7 @@ make clean           # Stop + wipe all volumes (full reset)
 make ps              # Show service health
 make logs            # Follow logs
 
-# Local dev only (requires: cp .env.example .env && python3 -m venv .venv && pip install -r requirements.txt)
+# Local dev only (requires: cp .env.example .env && make setup)
 make produce         # Run Kafka producer locally
 make consume         # Run Kafka consumer locally
 make dbt-run         # Run all dbt models locally
@@ -235,14 +257,30 @@ make dbt-test        # Run dbt schema tests locally
 | Concept | Implementation |
 |---|---|
 | ELT pattern | Raw data loaded first, transformed in-DB by dbt |
-| Event streaming | Kafka producer/consumer with 4 topics |
-| Incremental loading | `stg_game_events` only processes new plays |
-| Data quality | 44 dbt tests + source freshness + volume checks |
+| Event streaming | Kafka producer/consumer with 6 topics |
+| Full season analytics | Official MLB stats API — not sampled or approximated |
+| Incremental loading | `stg_game_events` only processes new plays each run |
+| Snapshot deduplication | `stg_hitting_stats` / `stg_pitching_stats` deduplicate on `player_id` |
+| Schedule accumulation | `raw_schedule` appends across days, dbt keeps best status per game |
+| Data quality | dbt schema tests + source freshness + Airflow volume checks |
 | Orchestration | Airflow DAG with retries, alerting, parallel tasks |
 | Data observability | Elementary + Prometheus/Grafana |
 | Medallion architecture | Bronze (raw) → Silver (staging) → Gold (marts) |
 | Idempotency | `DROP CASCADE` + `distinct on` + dbt `unique_key` |
 
+---
+
+## Resume Bullet
+
+> *"Built an end-to-end MLB data engineering pipeline processing full season data through Kafka, dbt, and PostgreSQL — ingesting official MLB stats for 500+ hitters and 600+ pitchers via 6 Kafka topics, transforming 650+ game results and season leaderboards through a dbt ELT layer with schema tests and source freshness checks, orchestrated hourly by Airflow and served through a Plotly Dash dashboard. Full stack on docker compose up."*
+
+---
+
+## Deep Dive
+
+For a full explanation of how every tool works, Django-to-DE analogies, code walkthroughs, and interview talking points → **[ARCHITECTURE.md](ARCHITECTURE.md)**
+
+---
 
 ## Data Source
 

@@ -26,8 +26,9 @@ with source as (
         pitcher_id::integer                          as pitcher_id,
         pitcher_name                                 as pitcher_name
     from {{ source('raw', 'raw_game_events') }}
+    where is_complete = true  -- exclude in-progress at-bats (event_type is null until play ends)
     {% if is_incremental() %}
-    where (game_pk::text || '_' || at_bat_index::text) not in (
+    and (game_pk::text || '_' || at_bat_index::text) not in (
         select event_id from {{ this }}
     )
     {% endif %}

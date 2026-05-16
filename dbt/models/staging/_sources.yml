@@ -31,10 +31,10 @@ sources:
             tests: [not_null]
 
       - name: raw_schedule
-        description: "MLB game schedule — one row per game"
+        description: "MLB game schedule — appends across days, deduplicated in stg_schedule"
         columns:
           - name: game_pk
-            tests: [not_null, unique]
+            tests: [not_null]
           - name: home_team_id
             tests: [not_null]
           - name: away_team_id
@@ -42,8 +42,24 @@ sources:
           - name: status
             tests: [not_null]
 
+      - name: raw_hitting_stats
+        description: "Official MLB season hitting stats for all players — from /api/v1/stats"
+        columns:
+          - name: player_id
+            tests: [not_null]
+          - name: player_name
+            tests: [not_null]
+
+      - name: raw_pitching_stats
+        description: "Official MLB season pitching stats for all players — from /api/v1/stats"
+        columns:
+          - name: player_id
+            tests: [not_null]
+          - name: player_name
+            tests: [not_null]
+
       - name: raw_game_events
-        description: "Play-by-play events streamed via Kafka — one row per at-bat"
+        description: "Play-by-play events streamed via Kafka — one row per at-bat. Incomplete in-progress plays may have null event_type."
         freshness:
           warn_after: {count: 24, period: hour}
           error_after: {count: 48, period: hour}
@@ -56,6 +72,4 @@ sources:
           - name: batter_id
             tests: [not_null]
           - name: pitcher_id
-            tests: [not_null]
-          - name: event_type
             tests: [not_null]

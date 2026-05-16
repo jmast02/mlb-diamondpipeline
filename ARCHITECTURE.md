@@ -75,39 +75,42 @@ This project mirrors what a **production data pipeline looks like at a real comp
          │                           │
          │ producer.py               │ consumer.py
          ▼                           ▼
-┌─────────────────┐         ┌─────────────────────┐
-│  Apache Kafka   │         │   Apache Kafka       │
-│                 │         │                      │
-│  Topics:        │────────▶│  Reads messages,     │
-│  mlb.teams      │         │  batches them,       │
-│  mlb.standings  │         │  writes to Postgres  │
-│  mlb.schedule   │         └──────────┬──────────┘
-│  mlb.game_events│                    │
-└─────────────────┘                    │ Pandas DataFrame
-                                       ▼ .to_sql()
+┌──────────────────────┐    ┌─────────────────────┐
+│    Apache Kafka      │    │   Apache Kafka       │
+│                      │    │                      │
+│  Topics:             │───▶│  Reads messages,     │
+│  mlb.teams           │    │  batches them,       │
+│  mlb.standings       │    │  writes to Postgres  │
+│  mlb.schedule        │    └──────────┬──────────┘
+│  mlb.game_events     │               │
+│  mlb.hitting_stats   │               │ Pandas DataFrame
+│  mlb.pitching_stats  │               ▼ .to_sql()
+└──────────────────────┘
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         PostgreSQL                                  │
 │                                                                     │
 │  ┌── public schema (RAW / BRONZE layer) ────────────────────────┐  │
 │  │                                                               │  │
-│  │  raw_teams        raw_standings    raw_schedule               │  │
-│  │  raw_game_events                                              │  │
+│  │  raw_teams          raw_standings     raw_schedule            │  │
+│  │  raw_game_events    raw_hitting_stats raw_pitching_stats      │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                              │                                      │
 │                              │  dbt run                             │
 │                              ▼                                      │
 │  ┌── analytics schema (STAGING / SILVER layer) ─────────────────┐  │
 │  │                                                               │  │
-│  │  stg_teams (view)          stg_standings (view)              │  │
-│  │  stg_schedule (view)       stg_game_events (table, incr.)    │  │
+│  │  stg_teams (view)         stg_standings (view)               │  │
+│  │  stg_schedule (view)      stg_game_events (table, incr.)     │  │
+│  │  stg_hitting_stats (view) stg_pitching_stats (view)          │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                              │                                      │
 │                              │  dbt run                             │
 │                              ▼                                      │
 │  ┌── analytics schema (MARTS / GOLD layer) ─────────────────────┐  │
 │  │                                                               │  │
-│  │  mart_standings          mart_game_results                   │  │
-│  │  mart_player_stats       mart_pitcher_matchups               │  │
+│  │  mart_standings        mart_game_results (650+ games)         │  │
+│  │  mart_player_stats     mart_pitching_leaders                  │  │
+│  │  (400+ hitters)        (600+ pitchers)                        │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
          │                                    │
@@ -118,9 +121,9 @@ This project mirrors what a **production data pipeline looks like at a real comp
 │  + Grafana       │               │    localhost:8050     │
 │  localhost:3000  │               │                       │
 │                  │               │  🏆 Standings          │
-│  Kafka lag       │               │  📊 Player Stats       │
-│  PG connections  │               │  🎮 Game Results       │
-│  Table row counts│               │  ⚔️  Pitcher Matchups   │
+│  Kafka lag       │               │  🏃 Batting            │
+│  PG connections  │               │  ⚾ Pitching           │
+│  Table row counts│               │  🎮 Game Results       │
 └──────────────────┘               └──────────────────────┘
 ```
 
@@ -140,19 +143,24 @@ The producer is like a **Django management command** that fetches data from an A
 ```python
 # It calls the MLB API (like requests.get() in Django)
 client = MLBApiClient()
-teams = client.get_teams()        # GET /api/v1/teams
-standings = client.get_standings() # GET /api/v1/standings
+teams    = client.get_teams()           # GET /api/v1/teams          → 30 records
+standings = client.get_standings()      # GET /api/v1/standings      → 30 records
+schedule  = client.get_season_schedule() # GET /api/v1/schedule      → 650+ games
+hitting   = client.get_hitting_stats()  # GET /api/v1/stats?group=hitting → 518 players
+pitching  = client.get_pitching_stats() # GET /api/v1/stats?group=pitching → 603 players
 
 # Then publishes each row as a JSON message to Kafka
-for _, row in teams.iterrows():
+for _, row in hitting.iterrows():
     producer.produce(
-        topic="mlb.teams",
-        key=str(row["team_id"]),
+        topic="mlb.hitting_stats",
+        key=str(row["player_id"]),
         value=json.dumps(row.to_dict()).encode("utf-8"),
     )
 ```
 
 **Why Kafka?** In a real streaming pipeline, game events happen live and continuously. Kafka decouples the producer (fetching data) from the consumer (writing to the database). If the DB is slow, Kafka buffers the events. If the producer crashes, Kafka holds the messages until the consumer catches up.
+
+**Key design decision:** Snapshot topics (teams, standings, hitting stats, pitching stats) accumulate all messages in memory before writing — a single `replace` at the end. Append topics (schedule, game events) flush every 50 messages to keep memory low. This prevents the "last batch wins" problem where mid-stream flushes would overwrite earlier data.
 
 ---
 
@@ -165,7 +173,10 @@ The consumer reads messages off the Kafka topics and writes them to PostgreSQL i
 
 ```python
 # Subscribe to all MLB topics
-consumer.subscribe(["mlb.teams", "mlb.standings", "mlb.schedule", "mlb.game_events"])
+consumer.subscribe([
+    "mlb.teams", "mlb.standings", "mlb.schedule",
+    "mlb.game_events", "mlb.hitting_stats", "mlb.pitching_stats",
+])
 
 # Poll for messages (like Django's request loop, but for messages)
 while True:
@@ -748,6 +759,15 @@ User clicks tab in browser
   Browser updates without page reload
 ```
 
+**The four tabs and what powers them:**
+
+| Tab | Reads From | What It Shows |
+|---|---|---|
+| 🏆 Standings | `mart_standings` | Division/league rank, win% chart for all 30 teams |
+| 🏃 Batting | `mart_player_stats` | Full season AVG, OBP, SLG, OPS for 400+ hitters |
+| ⚾ Pitching | `mart_pitching_leaders` | Full season ERA, WHIP, K/9 — starters and relievers |
+| 🎮 Game Results | `mart_game_results` | 650+ completed games with scores and winners |
+
 **Key components used:**
 ```python
 import dash_bootstrap_components as dbc
@@ -755,7 +775,6 @@ from dash import dcc, html, dash_table
 
 dbc.Tabs(...)           # Like Bootstrap's nav tabs (no HTML needed)
 dcc.Graph(figure=fig)   # Renders a Plotly chart
-dcc.Dropdown(...)       # Interactive dropdown that triggers callbacks
 dash_table.DataTable()  # Sortable, filterable table (like Django admin list view)
 dcc.Interval(...)       # Triggers a callback every N milliseconds (auto-refresh)
 ```
@@ -802,14 +821,16 @@ diamond-pipeline/
 │       │   ├── _staging.yml       ← Schema tests (not_null, unique) for staging models
 │       │   ├── stg_teams.sql      ← View: typed team reference data
 │       │   ├── stg_standings.sql  ← View: typed standings snapshot
-│       │   ├── stg_schedule.sql   ← View: typed game schedule
-│       │   └── stg_game_events.sql ← Incremental table: deduplicated play-by-play
+│       │   ├── stg_schedule.sql   ← View: deduplicates by game_pk, best status wins
+│       │   ├── stg_game_events.sql ← Incremental table: complete plays only
+│       │   ├── stg_hitting_stats.sql  ← View: official season hitting stats, dedup by player
+│       │   └── stg_pitching_stats.sql ← View: official season pitching stats, dedup by player
 │       └── marts/                 ← Gold layer: business-ready aggregations
 │           ├── _marts.yml         ← Schema tests for mart models
-│           ├── mart_standings.sql      ← Standings + division/league rank
-│           ├── mart_game_results.sql   ← Completed games with winner/loser/run diff
-│           ├── mart_player_stats.sql   ← Batting stats: AVG, OBP, SLG, OPS
-│           └── mart_pitcher_matchups.sql ← Head-to-head pitcher vs batter stats
+│           ├── mart_standings.sql      ← Standings + division/league rank (window functions)
+│           ├── mart_game_results.sql   ← 650+ season results with winner/loser/run diff
+│           ├── mart_player_stats.sql   ← Full season batting: AVG, OBP, SLG, OPS (official)
+│           └── mart_pitching_leaders.sql ← Full season ERA/WHIP leaders, starters + relievers
 │
 ├── airflow/                       ← Airflow configuration
 │   ├── Dockerfile                 ← Extends apache/airflow with our requirements
@@ -1008,9 +1029,9 @@ t=~70s  airflow-scheduler triggers first DAG run
         → dbt_test + source_freshness + volume_check (parallel)
 
 t=~90s  Pipeline run completes
-        → 30 teams, 30 standings, 26 games, 800+ events in PostgreSQL
-        → 4 mart tables populated
-        → Dashboard shows live data
+        → 30 teams, 30 standings, 650+ season games, official stats for 500+ hitters + 600+ pitchers
+        → 6 raw tables, 6 staging models, 4 mart tables populated
+        → Dashboard shows full 2026 season data
 ```
 
 **Services and their ports at a glance:**
@@ -1030,12 +1051,12 @@ localhost:9092  → Kafka broker             (for local producer/consumer dev)
 
 When a DE interviewer asks "walk me through your project," here's the narrative:
 
-> *"I built an end-to-end ELT pipeline that ingests live MLB game data. The producer fetches from the MLB Stats API and publishes events to Kafka topics — teams, standings, schedules, and play-by-play events. A consumer reads those topics and writes batched DataFrames to PostgreSQL as the raw layer.*
+> *"I built an end-to-end ELT pipeline processing full 2026 MLB season data. The producer fetches from six MLB Stats API endpoints and publishes across six Kafka topics — teams, standings, full season schedules, play-by-play events, and official season stats for 500+ hitters and 600+ pitchers. A consumer reads those topics and writes batched DataFrames to PostgreSQL as the raw layer, using snapshot semantics for stats and append semantics for event data.*
 >
-> *I then built a dbt transformation layer on top: staging models clean and type the raw data, and mart models compute business metrics like OPS, batting average, and pitcher-batter matchups using SQL window functions. dbt schema tests validate data quality on every run.*
+> *I then built a dbt transformation layer on top: staging models clean, type, and deduplicate the raw data — handling mid-season trade records and in-progress game plays — and mart models compute full season leaderboards using SQL window functions. dbt schema tests validate data quality on every run.*
 >
 > *The entire pipeline is orchestrated by Airflow on an hourly schedule, with retry logic, failure alerting, and volume/freshness checks as downstream tasks. Infrastructure metrics — Kafka consumer lag, PostgreSQL connections, table row counts — are scraped by Prometheus and visualized in Grafana. dbt run results feed into Elementary for data observability.*
 >
-> *Finally, a Plotly Dash app reads directly from the mart tables and serves four interactive dashboard views. The whole stack runs on docker compose up — no local setup required."*
+> *Finally, a Plotly Dash app reads directly from the mart tables and serves four dashboard views: division standings, a full season batting leaderboard with official MLB stats, a pitching leaderboard separating starters and relievers, and a complete game results log for the season. The whole stack runs on docker compose up — no local setup required."*
 
-That story hits: Kafka, Airflow, dbt, PostgreSQL, Pandas, Prometheus, Grafana, ELT, incremental loading, data quality, observability, and Docker. Every keyword from the job description.
+That story hits: Kafka, Airflow, dbt, PostgreSQL, Pandas, Prometheus, Grafana, ELT, incremental loading, snapshot vs append semantics, data quality, observability, and Docker. Every keyword from the job description — with real season-scale data to back it up.

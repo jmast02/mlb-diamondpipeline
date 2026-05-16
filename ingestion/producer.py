@@ -10,10 +10,12 @@ load_dotenv(find_dotenv())
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
-TOPIC_TEAMS       = "mlb.teams"
-TOPIC_STANDINGS   = "mlb.standings"
-TOPIC_SCHEDULE    = "mlb.schedule"
-TOPIC_GAME_EVENTS = "mlb.game_events"
+TOPIC_TEAMS          = "mlb.teams"
+TOPIC_STANDINGS      = "mlb.standings"
+TOPIC_SCHEDULE       = "mlb.schedule"
+TOPIC_GAME_EVENTS    = "mlb.game_events"
+TOPIC_HITTING_STATS  = "mlb.hitting_stats"
+TOPIC_PITCHING_STATS = "mlb.pitching_stats"
 
 COMPLETED_STATUSES = {"Final", "Game Over"}
 LIVE_STATUSES      = {"In Progress", "Manager Challenge"}
@@ -89,6 +91,27 @@ class MLBProducer:
         self.producer.flush()
         return len(plays)
 
+    def publish_season_schedule(self) -> int:
+        schedule = self.client.get_season_schedule()
+        for _, row in schedule.iterrows():
+            self._publish(TOPIC_SCHEDULE, str(row["game_pk"]), row.to_dict())
+        self.producer.flush()
+        return len(schedule)
+
+    def publish_hitting_stats(self) -> int:
+        stats = self.client.get_hitting_stats()
+        for _, row in stats.iterrows():
+            self._publish(TOPIC_HITTING_STATS, str(row["player_id"]), row.to_dict())
+        self.producer.flush()
+        return len(stats)
+
+    def publish_pitching_stats(self) -> int:
+        stats = self.client.get_pitching_stats()
+        for _, row in stats.iterrows():
+            self._publish(TOPIC_PITCHING_STATS, str(row["player_id"]), row.to_dict())
+        self.producer.flush()
+        return len(stats)
+
     def _find_playable_games(self, schedule) -> list[tuple]:
         """Return (game_pk, label) pairs for games that have play-by-play data."""
         games = []
@@ -110,9 +133,21 @@ class MLBProducer:
         n = self.publish_standings()
         print(f"  {n} messages published\n")
 
-        print(f"Schedule → {TOPIC_SCHEDULE}")
-        n, schedule = self.publish_schedule(game_date)
+        print(f"Full season schedule → {TOPIC_SCHEDULE}")
+        n = self.publish_season_schedule()
         print(f"  {n} messages published\n")
+
+        print(f"Hitting stats (official) → {TOPIC_HITTING_STATS}")
+        n = self.publish_hitting_stats()
+        print(f"  {n} messages published\n")
+
+        print(f"Pitching stats (official) → {TOPIC_PITCHING_STATS}")
+        n = self.publish_pitching_stats()
+        print(f"  {n} messages published\n")
+
+        print(f"Schedule (today fallback reference) → {TOPIC_SCHEDULE}")
+        _, schedule = self.publish_schedule(game_date)
+        print(f"  today's schedule refreshed\n")
 
         print(f"Game events → {TOPIC_GAME_EVENTS}")
         games = self._find_playable_games(schedule)

@@ -11,27 +11,35 @@ load_dotenv(find_dotenv())
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
-TOPIC_TEAMS       = "mlb.teams"
-TOPIC_STANDINGS   = "mlb.standings"
-TOPIC_SCHEDULE    = "mlb.schedule"
-TOPIC_GAME_EVENTS = "mlb.game_events"
+TOPIC_TEAMS          = "mlb.teams"
+TOPIC_STANDINGS      = "mlb.standings"
+TOPIC_SCHEDULE       = "mlb.schedule"
+TOPIC_GAME_EVENTS    = "mlb.game_events"
+TOPIC_HITTING_STATS  = "mlb.hitting_stats"
+TOPIC_PITCHING_STATS = "mlb.pitching_stats"
 
-BATCH_SIZE    = 50
-IDLE_TIMEOUT  = 10  # seconds of silence before exiting
+BATCH_SIZE   = 50
+IDLE_TIMEOUT = 10  # seconds of silence before exiting
 
-# Snapshot topics overwrite; event topic appends
+# Teams/standings/stats are full snapshots — always replace.
+# Schedule accumulates across days — append + deduplicate in dbt.
+# Game events are immutable facts — always append.
 IF_EXISTS = {
-    TOPIC_TEAMS:       "replace",
-    TOPIC_STANDINGS:   "replace",
-    TOPIC_SCHEDULE:    "replace",
-    TOPIC_GAME_EVENTS: "append",
+    TOPIC_TEAMS:          "replace",
+    TOPIC_STANDINGS:      "replace",
+    TOPIC_SCHEDULE:       "append",
+    TOPIC_GAME_EVENTS:    "append",
+    TOPIC_HITTING_STATS:  "replace",
+    TOPIC_PITCHING_STATS: "replace",
 }
 
 TABLE_MAP = {
-    TOPIC_TEAMS:       "raw_teams",
-    TOPIC_STANDINGS:   "raw_standings",
-    TOPIC_SCHEDULE:    "raw_schedule",
-    TOPIC_GAME_EVENTS: "raw_game_events",
+    TOPIC_TEAMS:          "raw_teams",
+    TOPIC_STANDINGS:      "raw_standings",
+    TOPIC_SCHEDULE:       "raw_schedule",
+    TOPIC_GAME_EVENTS:    "raw_game_events",
+    TOPIC_HITTING_STATS:  "raw_hitting_stats",
+    TOPIC_PITCHING_STATS: "raw_pitching_stats",
 }
 
 
@@ -85,7 +93,10 @@ class MLBConsumer:
                 self.counts[topic] += 1
                 last_msg_at = time.time()
 
-                if len(self.buffers[topic]) >= BATCH_SIZE:
+                # Only mid-stream flush for append topics (events, schedule).
+                # Snapshot topics (replace) accumulate all messages and write once at the end
+                # — flushing mid-stream would overwrite earlier batches with only 50 rows.
+                if len(self.buffers[topic]) >= BATCH_SIZE and IF_EXISTS[topic] == "append":
                     self._flush(topic)
 
         finally:

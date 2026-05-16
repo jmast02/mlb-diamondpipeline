@@ -4,6 +4,8 @@ from datetime import date
 
 BASE_URL = "https://statsapi.mlb.com/api/v1"
 
+SEASON_START = date(2026, 3, 25)  # 2026 MLB Opening Day
+
 
 class MLBApiClient:
     def __init__(self, season: int = None):
@@ -95,6 +97,112 @@ class MLBApiClient:
                     "away_score": game["teams"]["away"].get("score"),
                     "venue": game.get("venue", {}).get("name"),
                 })
+        return pd.DataFrame(rows)
+
+    def get_season_schedule(self, start_date: date = None, end_date: date = None) -> pd.DataFrame:
+        """Full season schedule from Opening Day to today."""
+        start = start_date or SEASON_START
+        end   = end_date   or date.today()
+        data  = self._get("/schedule", params={
+            "sportId":   1,
+            "startDate": start.strftime("%Y-%m-%d"),
+            "endDate":   end.strftime("%Y-%m-%d"),
+            "gameType":  "R",
+            "hydrate":   "linescore",
+        })
+        rows = []
+        for day in data.get("dates", []):
+            for game in day.get("games", []):
+                rows.append({
+                    "game_pk":      game["gamePk"],
+                    "game_date":    game["gameDate"],
+                    "status":       game["status"]["detailedState"],
+                    "home_team_id": game["teams"]["home"]["team"]["id"],
+                    "home_team":    game["teams"]["home"]["team"]["name"],
+                    "away_team_id": game["teams"]["away"]["team"]["id"],
+                    "away_team":    game["teams"]["away"]["team"]["name"],
+                    "home_score":   game["teams"]["home"].get("score"),
+                    "away_score":   game["teams"]["away"].get("score"),
+                    "venue":        game.get("venue", {}).get("name"),
+                })
+        return pd.DataFrame(rows)
+
+    def get_hitting_stats(self) -> pd.DataFrame:
+        """Official MLB season hitting stats for all players."""
+        data = self._get("/stats", params={
+            "stats":      "season",
+            "group":      "hitting",
+            "season":     self.season,
+            "sportId":    1,
+            "limit":      2000,
+            "playerPool": "All",
+        })
+        rows = []
+        for split in data.get("stats", [{}])[0].get("splits", []):
+            player = split.get("player", {})
+            team   = split.get("team", {})
+            stat   = split.get("stat", {})
+            rows.append({
+                "player_id":         player.get("id"),
+                "player_name":       player.get("fullName"),
+                "team_id":           team.get("id"),
+                "team_name":         team.get("name"),
+                "games":             stat.get("gamesPlayed"),
+                "at_bats":           stat.get("atBats"),
+                "plate_appearances": stat.get("plateAppearances"),
+                "hits":              stat.get("hits"),
+                "doubles":           stat.get("doubles"),
+                "triples":           stat.get("triples"),
+                "home_runs":         stat.get("homeRuns"),
+                "rbi":               stat.get("rbi"),
+                "walks":             stat.get("baseOnBalls"),
+                "strikeouts":        stat.get("strikeOuts"),
+                "stolen_bases":      stat.get("stolenBases"),
+                "batting_avg":       stat.get("avg"),
+                "obp":               stat.get("obp"),
+                "slg":               stat.get("slg"),
+                "ops":               stat.get("ops"),
+                "season":            self.season,
+            })
+        return pd.DataFrame(rows)
+
+    def get_pitching_stats(self) -> pd.DataFrame:
+        """Official MLB season pitching stats for all players."""
+        data = self._get("/stats", params={
+            "stats":      "season",
+            "group":      "pitching",
+            "season":     self.season,
+            "sportId":    1,
+            "limit":      2000,
+            "playerPool": "All",
+        })
+        rows = []
+        for split in data.get("stats", [{}])[0].get("splits", []):
+            player = split.get("player", {})
+            team   = split.get("team", {})
+            stat   = split.get("stat", {})
+            rows.append({
+                "player_id":         player.get("id"),
+                "player_name":       player.get("fullName"),
+                "team_id":           team.get("id"),
+                "team_name":         team.get("name"),
+                "games":             stat.get("gamesPlayed"),
+                "games_started":     stat.get("gamesStarted"),
+                "wins":              stat.get("wins"),
+                "losses":            stat.get("losses"),
+                "saves":             stat.get("saves"),
+                "innings_pitched":   stat.get("inningsPitched"),
+                "hits_allowed":      stat.get("hits"),
+                "earned_runs":       stat.get("earnedRuns"),
+                "walks_allowed":     stat.get("baseOnBalls"),
+                "strikeouts":        stat.get("strikeOuts"),
+                "home_runs_allowed": stat.get("homeRuns"),
+                "era":               stat.get("era"),
+                "whip":              stat.get("whip"),
+                "k_per_9":           stat.get("strikeoutsPer9Inn"),
+                "bb_per_9":          stat.get("walksPer9Inn"),
+                "season":            self.season,
+            })
         return pd.DataFrame(rows)
 
     def get_game_feed(self, game_pk: int) -> dict:

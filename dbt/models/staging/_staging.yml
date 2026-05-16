@@ -27,6 +27,22 @@ models:
       - name: game_pk
         tests: [not_null, unique]
 
+  - name: stg_hitting_stats
+    description: "Official MLB season hitting stats — typed and deduplicated"
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+      - name: player_name
+        tests: [not_null]
+
+  - name: stg_pitching_stats
+    description: "Official MLB season pitching stats — typed and deduplicated"
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+      - name: player_name
+        tests: [not_null]
+
   - name: stg_game_events
     description: "Deduplicated play-by-play events — incremental, keyed on event_id"
     columns:

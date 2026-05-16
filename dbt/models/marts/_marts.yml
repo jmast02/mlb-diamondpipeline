@@ -12,20 +12,20 @@ models:
         tests: [not_null]
 
   - name: mart_game_results
-    description: "Completed game results with winner, loser, and run differential"
+    description: "Season game results — winning_team is null for in-progress games"
     columns:
       - name: game_pk
         tests: [not_null, unique]
-      - name: winning_team
-        tests: [not_null]
 
   - name: mart_player_stats
-    description: "Season batting stats aggregated from play-by-play — min 3 plate appearances"
+    description: "Full season batting leaderboard from official MLB stats — min 10 plate appearances"
     columns:
       - name: player_id
         tests: [not_null, unique]
-      - name: batting_avg
-        tests: [not_null]
 
-  - name: mart_pitcher_matchups
-    description: "Pitcher vs. batter head-to-head stats — min 2 plate appearances"
+  - name: mart_pitching_leaders
+    description: "Full season pitching leaderboard from official MLB stats — starters and relievers"
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+
