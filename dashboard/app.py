@@ -14,6 +14,7 @@ from dashboard.data import (
     get_player_stats,
     get_standings,
 )
+from dashboard.predictions import build_hr_leaderboard
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -93,6 +94,7 @@ app.layout = dbc.Container([
         dbc.Tab(label="🏃  Batting",            tab_id="players"),
         dbc.Tab(label="⚾  Pitching",           tab_id="pitching"),
         dbc.Tab(label="🎮  Game Results",       tab_id="games"),
+        dbc.Tab(label="🔮  HR Predictions",     tab_id="hr_picks"),
     ]),
     html.Div(id="tab-content", className="mt-4"),
 
@@ -384,6 +386,101 @@ def _games_tab() -> html.Div:
     ])
 
 
+# ── HR Predictions tab ───────────────────────────────────────────────────────
+
+def _hr_picks_tab() -> html.Div:
+    df = build_hr_leaderboard()
+
+    if df.empty:
+        return html.Div([
+            html.P(
+                "Probable pitchers have not been announced for today's games yet. "
+                "Check back closer to game time.",
+                className="text-muted mt-4",
+            )
+        ])
+
+    top       = df.iloc[0]
+    games     = df["matchup"].nunique()
+    best_park = df.nlargest(1, "park_factor").iloc[0]
+    avg_prob  = df["hr_prob"].mean()
+
+    top20 = df.head(20)
+    fig = px.bar(
+        top20.sort_values("hr_prob"),
+        x="hr_prob",
+        y="batter_name",
+        color="park_factor",
+        orientation="h",
+        color_continuous_scale="RdYlGn",
+        range_color=[0.80, 1.40],
+        labels={"hr_prob": "HR Probability", "batter_name": "", "park_factor": "Park Factor"},
+        title="Top 20 HR Candidates Today",
+        text=top20.sort_values("hr_prob")["hr_prob_pct"],
+        height=520,
+    )
+    fig.update_traces(textposition="outside")
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis_tickformat=".1%",
+        coloraxis_colorbar_title="Park<br>Factor",
+    )
+
+    cols = [
+        {"name": c, "id": i} for c, i in [
+            ("Batter",       "batter_name"),
+            ("Team",         "team"),
+            ("Vs Pitcher",   "pitcher"),
+            ("Venue",        "venue"),
+            ("Park Factor",  "park_factor"),
+            ("HR Prob",      "hr_prob_pct"),
+            ("Season HR",    "season_hr"),
+            ("Season PA",    "season_pa"),
+            ("AVG",          "batting_avg"),
+            ("OPS",          "ops"),
+        ]
+    ]
+
+    return html.Div([
+        dbc.Row([
+            dbc.Col(_card("Top Candidate",
+                          top["batter_name"],
+                          f"{top['hr_prob_pct']} · {top['matchup']}", "warning"), md=3),
+            dbc.Col(_card("Games Today",
+                          str(games),
+                          "with probable pitchers announced"), md=3),
+            dbc.Col(_card("Best Park Today",
+                          best_park["venue"].split()[-1],   # last word e.g. "Field"
+                          f"Park factor {best_park['park_factor']:.2f}×", "success"), md=3),
+            dbc.Col(_card("Avg HR Probability",
+                          f"{avg_prob * 100:.1f}%",
+                          f"across {len(df)} qualifying matchups"), md=3),
+        ], className="g-3 mb-3"),
+
+        dcc.Graph(figure=fig, config={"displayModeBar": False}),
+
+        _section(f"Full Leaderboard — {len(df)} batter matchups"),
+        dash_table.DataTable(
+            data=df.to_dict("records"),
+            columns=cols,
+            sort_action="native",
+            filter_action="native",
+            page_size=25,
+            **_TABLE_STYLE,
+        ),
+
+        html.Hr(className="border-secondary mt-4"),
+        html.P(
+            "📐 Model: season HR rate × pitcher HR allowed rate ÷ league average (3.4% per PA) × park factor. "
+            "Probable pitchers from MLB Stats API. Batters with fewer than 20 PA excluded. "
+            "Park factors based on historical multi-year HR rates. Platoon adjustments (L/R) coming soon.",
+            className="text-muted small",
+        ),
+    ])
+
+
 # ── Tab router ────────────────────────────────────────────────────────────────
 
 @callback(
@@ -397,6 +494,7 @@ def _render_tab(tab: str, _: int) -> html.Div:
         "players":   _players_tab,
         "pitching":  _pitching_tab,
         "games":     _games_tab,
+        "hr_picks":  _hr_picks_tab,
     }
     return renderers.get(tab, lambda: html.Div())()
 

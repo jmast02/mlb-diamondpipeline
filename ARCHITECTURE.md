@@ -767,6 +767,7 @@ User clicks tab in browser
 | 🏃 Batting | `mart_player_stats` | Full season AVG, OBP, SLG, OPS for 400+ hitters |
 | ⚾ Pitching | `mart_pitching_leaders` | Full season ERA, WHIP, K/9 — starters and relievers |
 | 🎮 Game Results | `mart_game_results` | 650+ completed games with scores and winners |
+| 🔮 HR Predictions | `mart_player_stats` + `mart_pitching_leaders` + MLB API | Daily HR probability per batter vs probable pitcher, park-adjusted |
 
 **Key components used:**
 ```python
@@ -844,7 +845,8 @@ diamond-pipeline/
 │   ├── Dockerfile                 ← Python 3.11-slim + requirements.txt
 │   ├── __init__.py
 │   ├── data.py                    ← All database queries (reads from analytics schema)
-│   └── app.py                     ← Full Dash app: layout, callbacks, charts
+│   ├── predictions.py             ← HR probability engine: log5 model, park factors, live probable pitchers from MLB API
+│   └── app.py                     ← Full Dash app: layout, callbacks, charts (5 tabs)
 │
 ├── observability/
 │   ├── prometheus/
@@ -1057,6 +1059,6 @@ When a DE interviewer asks "walk me through your project," here's the narrative:
 >
 > *The entire pipeline is orchestrated by Airflow on an hourly schedule, with retry logic, failure alerting, and volume/freshness checks as downstream tasks. Infrastructure metrics — Kafka consumer lag, PostgreSQL connections, table row counts — are scraped by Prometheus and visualized in Grafana. dbt run results feed into Elementary for data observability.*
 >
-> *Finally, a Plotly Dash app reads directly from the mart tables and serves four dashboard views: division standings, a full season batting leaderboard with official MLB stats, a pitching leaderboard separating starters and relievers, and a complete game results log for the season. The whole stack runs on docker compose up — no local setup required."*
+> *Finally, a Plotly Dash app reads directly from the mart tables and serves five dashboard views: division standings, a full season batting leaderboard with official MLB stats, a pitching leaderboard separating starters and relievers, a complete game results log, and a daily HR probability leaderboard. The predictions tab fetches today's probable pitchers live from the MLB Stats API and computes a log5-style HR probability for every qualifying batter — regressed to the mean to handle small samples, multiplied by a park factor, and matched to games via team ID for cross-API reliability. The whole stack runs on docker compose up — no local setup required."*
 
 That story hits: Kafka, Airflow, dbt, PostgreSQL, Pandas, Prometheus, Grafana, ELT, incremental loading, snapshot vs append semantics, data quality, observability, and Docker. Every keyword from the job description — with real season-scale data to back it up.

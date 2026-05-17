@@ -103,6 +103,8 @@ That's it. Airflow picks up the DAG automatically and runs the full pipeline. Wi
 
 **🎮 Game Results** — Complete season game log with 650+ results, scores, winners, run differentials, and a wins-by-team chart for the full season.
 
+**🔮 HR Predictions** — Daily home run probability leaderboard. For each batter facing a probable pitcher, the model computes a regressed HR rate × pitcher HR-allowed rate ÷ league average × park factor. Probable pitchers fetched live from the MLB Stats API. Batters matched to games by team ID (not name) for reliable cross-API consistency.
+
 ---
 
 ## How the Pipeline Works
@@ -182,7 +184,8 @@ mlb-diamondpipeline/
 ├── dashboard/
 │   ├── Dockerfile        # python:3.11-slim + requirements.txt
 │   ├── data.py           # PostgreSQL query functions
-│   └── app.py            # Plotly Dash app (4 tabs)
+│   ├── predictions.py    # HR prediction engine (log5 model + park factors)
+│   └── app.py            # Plotly Dash app (5 tabs)
 ├── observability/
 │   ├── prometheus/       # Scrape config
 │   └── grafana/          # Dashboard JSON + provisioning
@@ -272,7 +275,7 @@ make dbt-test        # Run dbt schema tests locally
 
 ## Resume Bullet
 
-> *"Built an end-to-end MLB data engineering pipeline processing full season data through Kafka, dbt, and PostgreSQL — ingesting official MLB stats for 500+ hitters and 600+ pitchers via 6 Kafka topics, transforming 650+ game results and season leaderboards through a dbt ELT layer with schema tests and source freshness checks, orchestrated hourly by Airflow and served through a Plotly Dash dashboard. Full stack on docker compose up."*
+> *"Built an end-to-end MLB data engineering pipeline processing full season data through Kafka, dbt, and PostgreSQL — ingesting official MLB stats for 500+ hitters and 600+ pitchers via 6 Kafka topics, transforming 650+ game results and season leaderboards through a dbt ELT layer with schema tests and source freshness checks, orchestrated hourly by Airflow and served through a five-tab Plotly Dash dashboard including a live HR probability model using a log5 approach with Bayesian rate regression and park factors. Full stack on docker compose up."*
 
 ---
 
