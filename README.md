@@ -271,17 +271,10 @@ make dbt-test        # Run dbt schema tests locally
 | Medallion architecture | Bronze (raw) → Silver (staging) → Gold (marts) |
 | Idempotency | `DROP CASCADE` + `distinct on` + dbt `unique_key` |
 
----
-
-## Resume Bullet
-
-> *"Built an end-to-end MLB data engineering pipeline processing full season data through Kafka, dbt, and PostgreSQL — ingesting official MLB stats for 500+ hitters and 600+ pitchers via 6 Kafka topics, transforming 650+ game results and season leaderboards through a dbt ELT layer with schema tests and source freshness checks, orchestrated hourly by Airflow and served through a five-tab Plotly Dash dashboard including a live HR probability model using a log5 approach with Bayesian rate regression and park factors. Full stack on docker compose up."*
-
----
 
 ## Deep Dive
 
-For a full explanation of how every tool works, Django-to-DE analogies, code walkthroughs, and interview talking points → **[ARCHITECTURE.md](ARCHITECTURE.md)**
+For a full explanation of how every tool works, Django-to-DE analogies, code walkthroughs, → **[ARCHITECTURE.md](ARCHITECTURE.md)**
 
 ---
 
