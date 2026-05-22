@@ -153,31 +153,6 @@ mlb-gameflow/
 
 ---
 
-## Resume Bullet (once complete)
-
-*"Built an end-to-end MLB data pipeline using Kafka, Airflow, dbt, and PostgreSQL — ingesting live game data from the MLB Stats API, normalizing it through a dbt transformation layer, and serving real-time standings and player analytics through a Plotly Dash dashboard."*
-
----
-
-## Key Resume Keywords This Project Covers
-
-- Apache Kafka (event streaming)
-- Apache Airflow (orchestration)
-- dbt (data transformation)
-- ETL / ELT pipelines
-- PostgreSQL
-- Pandas / NumPy
-- REST API ingestion
-- Docker
-- Data modeling
-- Data quality
-- Prometheus (metrics collection)
-- Grafana (observability dashboards)
-- Elementary (data observability)
-- Incremental data loading
-
----
-
 ## Resources
 
 - [MLB Stats API Docs](https://statsapi.mlb.com/api/) — no auth required
